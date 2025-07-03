@@ -96,17 +96,15 @@ void gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, i
         createGaussianKernel(kernel.data(), kernel_size, sigmas[i]);
         gaussianBlur(img_in, blurred + i * img_size, width, height, channels, kernel.data(), kernel_size);
     }
-    // Compute DoG images between each pair of blurred images
     for (int i = 0; i < num_levels - 1; ++i) {
         differenceOfGaussians(blurred + i * img_size, blurred + (i + 1) * img_size, dogs + i * img_size, width, height, channels);
     }
 }
 
-// Host function to find keypoints (local extrema) in DoG pyramid
 int findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, int (*keypoints)[4], int max_keypoints, float threshold) {
     int img_size = width * height * channels;
     int count = 0;
-    for (int l = 1; l < num_levels - 2; ++l) { // skip first and last DoG levels for 3D neighborhood
+    for (int l = 1; l < num_levels - 2; ++l) {
         const float* dog_prev = dogs + (l - 1) * img_size;
         const float* dog_curr = dogs + l * img_size;
         const float* dog_next = dogs + (l + 1) * img_size;
