@@ -23,23 +23,18 @@ int main() {
 
     const int num_levels = 6;
     const int kernel_size = 13;
-    float sigmas[num_levels] = {1.6f, 2.0f, 2.8f, 4.0f, 5.6f, 8.0f};
-    std::vector<unsigned char> blurred(w * h * num_levels);
-    std::vector<float> dogs(w * h * (num_levels - 1));
-    gaussianPyramidAndDoG(img_in.data(), w, h, 1, num_levels, sigmas, blurred.data(), dogs.data(), kernel_size);
-
-    const int max_keypoints = 10000;
-    int keypoints[max_keypoints][4];
-    int n_keypoints = findDoGKeypoints(dogs.data(), w, h, 1, num_levels, keypoints, max_keypoints, 10.0f);
+    std::vector<float> sigmas = {1.6f, 2.0f, 2.8f, 4.0f, 5.6f, 8.0f};
+    Sift sift(num_levels, kernel_size, sigmas);
+    auto keypoints = sift.detectKeypoints(img_in.data(), w, h, 1);
 
     CImg<unsigned char> img_marked = img_gray.get_normalize(0,255);
-    for (int i = 0; i < n_keypoints; ++i) {
-        int x = keypoints[i][0];
-        int y = keypoints[i][1];
+    for (const auto& kp : keypoints) {
+        int x = kp[0];
+        int y = kp[1];
         unsigned char color[3] = {255, 0, 0};
         img_marked.draw_circle(x, y, 2, color, 1.0f);
     }
     img_marked.save("resources/test_images/cat_photo_1_keypoints.jpg");
-    std::cout << "Saved: resources/test_images/cat_photo_1_keypoints.jpg with " << n_keypoints << " keypoints." << std::endl;
+    std::cout << "Saved: resources/test_images/cat_photo_1_keypoints.jpg with " << keypoints.size() << " keypoints." << std::endl;
     return 0;
 }

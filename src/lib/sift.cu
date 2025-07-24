@@ -4,7 +4,57 @@
 #include <algorithm>
 #include "sift.cuh"
 
-void createGaussianKernel(float* kernel, int kernel_size, float sigma) {
+__global__ void gaussianBlurKernel(const unsigned char* img_in, unsigned char* img_out, int width, int height, int channels, const float* kernel, int kernel_size) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int c = blockIdx.z * blockDim.z + threadIdx.z;
+    if (x < width && y < height && c < channels) {
+        float sum = 0.0f;
+        float weight_sum = 0.0f;
+        for (int neighbour_y = max(y - (kernel_size / 2), 0); neighbour_y <= min(y + (kernel_size / 2), height - 1); neighbour_y++) {
+            for (int neighbour_x = max(x - (kernel_size / 2), 0); neighbour_x <= min(x + (kernel_size / 2), width - 1); neighbour_x++) {
+                float w = kernel[(neighbour_y - (y - (kernel_size / 2))) * kernel_size + (neighbour_x - (x - kernel_size / 2))];
+                sum += w * img_in[(neighbour_y * width + neighbour_x) * channels + c];
+                weight_sum += w;
+            }
+        }
+        img_out[(y * width + x) * channels + c] = (unsigned char)(sum / weight_sum);
+    }
+}
+
+__global__ void dogKernel(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int c = blockIdx.z * blockDim.z + threadIdx.z;
+    if (x < width && y < height && c < channels) {
+        int idx = (y * width + x) * channels + c;
+        dog[idx] = static_cast<float>(img1[idx]) - static_cast<float>(img2[idx]);
+    }
+}
+
+Sift::Sift(int num_levels, int kernel_size, const std::vector<float>& sigmas)
+    : num_levels_(num_levels), kernel_size_(kernel_size), sigmas_(sigmas) {}
+
+Sift::~Sift() {}
+
+std::vector<std::vector<int>> Sift::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
+    std::vector<std::vector<int>> keypoints;
+    int img_size = width * height * channels;
+    std::vector<unsigned char> blurred(img_size * num_levels_);
+    std::vector<float> dogs(img_size * (num_levels_ - 1));
+    gaussianPyramidAndDoG(img_in, width, height, channels, num_levels_, sigmas_.data(), blurred.data(), dogs.data(), kernel_size_);
+
+    const int max_keypoints = 10000;
+    int keypoints_arr[max_keypoints][4];
+    int n_keypoints = findDoGKeypoints(dogs.data(), width, height, channels, num_levels_, keypoints_arr, max_keypoints, 10.0f);
+
+    for (int i = 0; i < n_keypoints; ++i) {
+        keypoints.push_back({keypoints_arr[i][0], keypoints_arr[i][1], keypoints_arr[i][2], keypoints_arr[i][3]});
+    }
+    return keypoints;
+}
+
+void Sift::createGaussianKernel(float* kernel, int kernel_size, float sigma) {
     int k = kernel_size / 2;
     float sum = 0.0f;
     for (int y = 0; y < kernel_size; ++y) {
@@ -19,27 +69,7 @@ void createGaussianKernel(float* kernel, int kernel_size, float sigma) {
     for (int i = 0; i < kernel_size * kernel_size; ++i) kernel[i] /= sum;
 }
 
-__global__ void gaussianBlurKernel(const unsigned char* img_in, unsigned char* img_out, int width, int height, int channels, const float* kernel, int kernel_size) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-    int c = blockIdx.z * blockDim.z + threadIdx.z;
-    if (x < width && y < height && c < channels) {
-        float sum = 0.0f;
-        float weight_sum = 0.0f;
-
-        // Iterate over all neighbouring pixels, multiply the with the kernel and save weighted sum
-        for (int neighbour_y = max(y - (kernel_size / 2), 0); neighbour_y <= min(y + (kernel_size / 2), height - 1); neighbour_y++) {
-            for (int neighbour_x = max(x - (kernel_size / 2), 0); neighbour_x <= min(x + (kernel_size / 2), width - 1); neighbour_x++) {
-                float w = kernel[(neighbour_y - (y - (kernel_size / 2))) * kernel_size + (neighbour_x - (x - kernel_size / 2))];
-                sum += w * img_in[(neighbour_y * width + neighbour_x) * channels + c];
-                weight_sum += w;
-            }
-        }
-        img_out[(y * width + x) * channels + c] = (unsigned char)(sum / weight_sum);
-    }
-}
-
-void gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int width, int height, int channels, const float* kernel, int kernel_size) {
+void Sift::gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int width, int height, int channels, const float* kernel, int kernel_size) {
     size_t img_size = width * height * channels * sizeof(unsigned char);
     size_t kernel_bytes = kernel_size * kernel_size * sizeof(float);
     unsigned char *d_in, *d_out;
@@ -59,17 +89,7 @@ void gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int width
     cudaFree(d_kernel);
 }
 
-__global__ void dogKernel(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-    int c = blockIdx.z * blockDim.z + threadIdx.z;
-    if (x < width && y < height && c < channels) {
-        int idx = (y * width + x) * channels + c;
-        dog[idx] = static_cast<float>(img1[idx]) - static_cast<float>(img2[idx]);
-    }
-}
-
-void differenceOfGaussians(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
+void Sift::differenceOfGaussians(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
     size_t img_size = width * height * channels * sizeof(unsigned char);
     size_t dog_size = width * height * channels * sizeof(float);
     unsigned char *d_img1, *d_img2;
@@ -89,7 +109,7 @@ void differenceOfGaussians(const unsigned char* img1, const unsigned char* img2,
     cudaFree(d_dog);
 }
 
-void gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, int channels, int num_levels, const float* sigmas, unsigned char* blurred, float* dogs, int kernel_size) {
+void Sift::gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, int channels, int num_levels, const float* sigmas, unsigned char* blurred, float* dogs, int kernel_size) {
     int img_size = width * height * channels;
     std::vector<float> kernel(kernel_size * kernel_size);
     for (int i = 0; i < num_levels; ++i) {
@@ -101,7 +121,7 @@ void gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, i
     }
 }
 
-int findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, int (*keypoints)[4], int max_keypoints, float threshold) {
+int Sift::findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, int (*keypoints)[4], int max_keypoints, float threshold) {
     int img_size = width * height * channels;
     int count = 0;
     for (int l = 1; l < num_levels - 2; ++l) {
