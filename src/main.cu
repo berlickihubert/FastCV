@@ -29,8 +29,8 @@ int main() {
 
     CImg<unsigned char> img_marked = img_gray.get_normalize(0,255);
     for (const auto& kp : keypoints) {
-        int x = kp[0];
-        int y = kp[1];
+        int x = kp.x;
+        int y = kp.y;
         unsigned char color[3] = {255, 0, 0};
         img_marked.draw_circle(x, y, 2, color, 1.0f);
     }

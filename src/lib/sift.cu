@@ -37,22 +37,6 @@ Sift::Sift(int num_levels, int kernel_size, const std::vector<float>& sigmas)
 
 Sift::~Sift() {}
 
-std::vector<std::vector<int>> Sift::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
-    std::vector<std::vector<int>> keypoints;
-    int img_size = width * height * channels;
-    std::vector<unsigned char> blurred(img_size * num_levels_);
-    std::vector<float> dogs(img_size * (num_levels_ - 1));
-    gaussianPyramidAndDoG(img_in, width, height, channels, num_levels_, sigmas_.data(), blurred.data(), dogs.data(), kernel_size_);
-
-    const int max_keypoints = 10000;
-    int keypoints_arr[max_keypoints][4];
-    int n_keypoints = findDoGKeypoints(dogs.data(), width, height, channels, num_levels_, keypoints_arr, max_keypoints, 10.0f);
-
-    for (int i = 0; i < n_keypoints; ++i) {
-        keypoints.push_back({keypoints_arr[i][0], keypoints_arr[i][1], keypoints_arr[i][2], keypoints_arr[i][3]});
-    }
-    return keypoints;
-}
 
 void Sift::createGaussianKernel(float* kernel, int kernel_size, float sigma) {
     int k = kernel_size / 2;
@@ -89,6 +73,8 @@ void Sift::gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int
     cudaFree(d_kernel);
 }
 
+// in: img1, img2
+// out: dog
 void Sift::differenceOfGaussians(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
     size_t img_size = width * height * channels * sizeof(unsigned char);
     size_t dog_size = width * height * channels * sizeof(float);
@@ -109,6 +95,8 @@ void Sift::differenceOfGaussians(const unsigned char* img1, const unsigned char*
     cudaFree(d_dog);
 }
 
+//in: img_in
+//out: dogs
 void Sift::gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, int channels, int num_levels, const float* sigmas, unsigned char* blurred, float* dogs, int kernel_size) {
     int img_size = width * height * channels;
     std::vector<float> kernel(kernel_size * kernel_size);
@@ -121,13 +109,14 @@ void Sift::gaussianPyramidAndDoG(const unsigned char* img_in, int width, int hei
     }
 }
 
-int Sift::findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, int (*keypoints)[4], int max_keypoints, float threshold) {
+// std::vector<float> dogs(img_size * (num_levels_ - 1));
+void Sift::findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, std::vector<SiftKeypoint>& keypoints, int max_keypoints, float threshold) {
     int img_size = width * height * channels;
-    int count = 0;
     for (int l = 1; l < num_levels - 2; ++l) {
         const float* dog_prev = dogs + (l - 1) * img_size;
         const float* dog_curr = dogs + l * img_size;
         const float* dog_next = dogs + (l + 1) * img_size;
+        
         for (int y = 1; y < height - 1; ++y) {
             for (int x = 1; x < width - 1; ++x) {
                 for (int c = 0; c < channels; ++c) {
@@ -135,32 +124,66 @@ int Sift::findDoGKeypoints(const float* dogs, int width, int height, int channel
                     float val = dog_curr[idx];
                     if (fabs(val) < threshold) continue;
                     bool is_max = true, is_min = true;
-                    for (int dl = -1; dl <= 1; ++dl) {
-                        const float* dog = (dl == -1) ? dog_prev : (dl == 0) ? dog_curr : dog_next;
-                        for (int dy = -1; dy <= 1; ++dy) {
-                            for (int dx = -1; dx <= 1; ++dx) {
-                                for (int dc = 0; dc < channels; ++dc) {
-                                    if (dl == 0 && dy == 0 && dx == 0 && dc == 0) continue;
-                                    int nidx = ((y + dy) * width + (x + dx)) * channels + dc;
-                                    float nval = dog[nidx];
-                                    if (val <= nval) is_max = false;
-                                    if (val >= nval) is_min = false;
-                                }
-                            }
-                        }
+                    
+                    std::vector<float> neighbours = {
+                        dog_prev[((y - 1) * width + (x - 1)) * channels + c],
+                        dog_prev[((y - 1) * width + x) * channels + c],
+                        dog_prev[((y - 1) * width + (x + 1)) * channels + c],
+                        dog_prev[(y * width + (x - 1)) * channels + c],
+                        dog_prev[(y * width + x) * channels + c],
+                        dog_prev[(y * width + (x + 1)) * channels + c],
+                        dog_prev[((y + 1) * width + (x - 1)) * channels + c],
+                        dog_prev[((y + 1) * width + x) * channels + c],
+                        dog_prev[((y + 1) * width + (x + 1)) * channels + c],
+
+                        dog_next[((y - 1) * width + (x - 1)) * channels + c],
+                        dog_next[((y - 1) * width + x) * channels + c],
+                        dog_next[((y - 1) * width + (x + 1)) * channels + c],
+                        dog_next[(y * width + (x - 1)) * channels + c],
+                        dog_next[(y * width + x) * channels + c],
+                        dog_next[(y * width + (x + 1)) * channels + c],
+                        dog_next[((y + 1) * width + (x - 1)) * channels + c],
+                        dog_next[((y + 1) * width + x) * channels + c],
+                        dog_next[((y + 1) * width + (x + 1)) * channels + c],
+
+                        dog[((y - 1) * width + (x - 1)) * channels + c],
+                        dog[((y - 1) * width + x) * channels + c],
+                        dog[((y - 1) * width + (x + 1)) * channels + c],
+                        dog[(y * width + (x - 1)) * channels + c],
+                        dog[(y * width + (x + 1)) * channels + c],
+                        dog[((y + 1) * width + (x - 1)) * channels + c],
+                        dog[((y + 1) * width + x) * channels + c],
+                        dog[((y + 1) * width + (x + 1)) * channels + c]
+                    };
+
+                    for(const auto& nval : neighbours) {
+                        if (val <= nval) is_max = false;
+                        if (val >= nval) is_min = false;
                     }
-                    if ((is_max || is_min) && count < max_keypoints) {
-                        keypoints[count][0] = x;
-                        keypoints[count][1] = y;
-                        keypoints[count][2] = l;
-                        keypoints[count][3] = c;
-                        ++count;
+
+                    if ((is_max || is_min) && keypoints.size() < static_cast<size_t>(max_keypoints)) {
+                        SiftKeypoint kp;
+                        kp.x = x;
+                        kp.y = y;
+                        kp.scale = l;
+                        kp.orientation = 0.0f;
+                        kp.descriptor.fill(0.0f);
+                        keypoints.push_back(kp);
                     }
                 }
             }
         }
     }
-    return count;
 }
 
+std::vector<SiftKeypoint> Sift::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
+    std::vector<SiftKeypoint> keypoints;
+    int img_size = width * height * channels;
+    std::vector<unsigned char> blurred(img_size * num_levels_);
+    std::vector<float> dogs(img_size * (num_levels_ - 1));
+    gaussianPyramidAndDoG(img_in, width, height, channels, num_levels_, sigmas_.data(), blurred.data(), dogs.data(), kernel_size_);
 
+    const int max_keypoints = 10000;
+    findDoGKeypoints(dogs.data(), width, height, channels, num_levels_, keypoints, max_keypoints, 10.0f);
+    return keypoints;
+}

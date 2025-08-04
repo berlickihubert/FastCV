@@ -14,3 +14,9 @@
    ```powershell
    docker run --gpus all --rm -v ${PWD}/resources/test_images:/app/resources/test_images cuda-demo
    ```
+
+
+## Tasks:
+   - Rewrite int Sift::findDoGKeypoints:
+      - pass dog as multidimensional array not pointer to remove dog_curr, dog_prev, dog_next
+      - improve readibility
