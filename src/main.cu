@@ -33,6 +33,12 @@ int main() {
         int y = kp.y;
         unsigned char color[3] = {255, 0, 0};
         img_marked.draw_circle(x, y, 2, color, 1.0f);
+        
+        int len = 10;
+        float angle_rad = kp.orientation * 3.14159265f / 180.0f;
+        int x2 = int(x + len * std::cos(angle_rad));
+        int y2 = int(y + len * std::sin(angle_rad));
+        img_marked.draw_line(x, y, x2, y2, color, 1.0f);
     }
     img_marked.save("resources/test_images/cat_photo_1_keypoints.jpg");
     std::cout << "Saved: resources/test_images/cat_photo_1_keypoints.jpg with " << keypoints.size() << " keypoints." << std::endl;

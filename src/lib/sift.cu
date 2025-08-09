@@ -146,14 +146,14 @@ void Sift::findDoGKeypoints(const float* dogs, int width, int height, int channe
                         dog_next[((y + 1) * width + x) * channels + c],
                         dog_next[((y + 1) * width + (x + 1)) * channels + c],
 
-                        dog[((y - 1) * width + (x - 1)) * channels + c],
-                        dog[((y - 1) * width + x) * channels + c],
-                        dog[((y - 1) * width + (x + 1)) * channels + c],
-                        dog[(y * width + (x - 1)) * channels + c],
-                        dog[(y * width + (x + 1)) * channels + c],
-                        dog[((y + 1) * width + (x - 1)) * channels + c],
-                        dog[((y + 1) * width + x) * channels + c],
-                        dog[((y + 1) * width + (x + 1)) * channels + c]
+                        dog_curr[((y - 1) * width + (x - 1)) * channels + c],
+                        dog_curr[((y - 1) * width + x) * channels + c],
+                        dog_curr[((y - 1) * width + (x + 1)) * channels + c],
+                        dog_curr[(y * width + (x - 1)) * channels + c],
+                        dog_curr[(y * width + (x + 1)) * channels + c],
+                        dog_curr[((y + 1) * width + (x - 1)) * channels + c],
+                        dog_curr[((y + 1) * width + x) * channels + c],
+                        dog_curr[((y + 1) * width + (x + 1)) * channels + c]
                     };
 
                     for(const auto& nval : neighbours) {
@@ -185,5 +185,80 @@ std::vector<SiftKeypoint> Sift::detectKeypoints(const unsigned char* img_in, int
 
     const int max_keypoints = 10000;
     findDoGKeypoints(dogs.data(), width, height, channels, num_levels_, keypoints, max_keypoints, 10.0f);
+
+    for (auto& kp : keypoints) {
+        kp.orientation = assignOrientation(blurred.data() + kp.scale * width * height, width, height, channels, kp.x, kp.y, kp.scale);
+    }
     return keypoints;
+}
+
+float Sift::assignOrientation(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale) {
+    const int radius = 8;
+    const int hist_bins = 36;
+    std::vector<float> hist(hist_bins, 0.0f);
+    float sigma = 1.5f * sigmas_[scale];
+    float two_sigma2 = 2.0f * sigma * sigma;
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            int xx = x + dx;
+            int yy = y + dy;
+            if (xx <= 0 || xx >= width-1 || yy <= 0 || yy >= height-1) continue;
+            float dx_val = float(blurred[yy * width + (xx+1)]) - float(blurred[yy * width + (xx-1)]);
+            float dy_val = float(blurred[(yy+1) * width + xx]) - float(blurred[(yy-1) * width + xx]);
+            float mag = std::sqrt(dx_val * dx_val + dy_val * dy_val);
+            float angle = std::atan2(dy_val, dx_val) * 180.0f / 3.14159265f;
+            if (angle < 0) angle += 360.0f;
+            float weight = std::exp(-(dx*dx + dy*dy) / two_sigma2);
+            int bin = int(std::round(angle / 360.0f * hist_bins)) % hist_bins;
+            hist[bin] += mag * weight;
+        }
+    }
+    int max_bin = std::max_element(hist.begin(), hist.end()) - hist.begin();
+    float orientation = max_bin * 360.0f / hist_bins;
+    return orientation;
+}
+
+
+std::array<float, 128> Sift::computeDescriptor(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale, float orientation) {
+    std::array<float, 128> desc = {0};
+    const int d = 4;
+    const int n = 8;
+    const int win_size = 16;
+    float cos_t = std::cos(orientation * 3.14159265f / 180.0f);
+    float sin_t = std::sin(orientation * 3.14159265f / 180.0f);
+    float sigma = 0.5f * win_size;
+    float two_sigma2 = 2.0f * sigma * sigma;
+    for (int i = -win_size/2; i < win_size/2; ++i) {
+        for (int j = -win_size/2; j < win_size/2; ++j) {
+            float rx =  cos_t * j + sin_t * i;
+            float ry = -sin_t * j + cos_t * i;
+            int bin_x = int((rx + win_size/2 - 0.5f) / (win_size/d));
+            int bin_y = int((ry + win_size/2 - 0.5f) / (win_size/d));
+            if (bin_x < 0 || bin_x >= d || bin_y < 0 || bin_y >= d) continue;
+            int xx = x + j;
+            int yy = y + i;
+            if (xx <= 0 || xx >= width-1 || yy <= 0 || yy >= height-1) continue;
+            float dx_val = float(blurred[yy * width + (xx+1)]) - float(blurred[yy * width + (xx-1)]);
+            float dy_val = float(blurred[(yy+1) * width + xx]) - float(blurred[(yy-1) * width + xx]);
+            float mag = std::sqrt(dx_val * dx_val + dy_val * dy_val);
+            float angle = std::atan2(dy_val, dx_val) * 180.0f / 3.14159265f - orientation;
+            while (angle < 0) angle += 360.0f;
+            while (angle >= 360.0f) angle -= 360.0f;
+            float weight = std::exp(-(rx*rx + ry*ry) / two_sigma2);
+            int bin_o = int(std::round(angle / 360.0f * n)) % n;
+            int idx = (bin_y * d + bin_x) * n + bin_o;
+            if (idx >= 0 && idx < 128)
+                desc[idx] += mag * weight;
+        }
+    }
+    float norm = 0.0f;
+    for (float v : desc) norm += v*v;
+    norm = std::sqrt(norm);
+    if (norm > 1e-6f) for (float& v : desc) v /= norm;
+    for (float& v : desc) if (v > 0.2f) v = 0.2f;
+    norm = 0.0f;
+    for (float v : desc) norm += v*v;
+    norm = std::sqrt(norm);
+    if (norm > 1e-6f) for (float& v : desc) v /= norm;
+    return desc;
 }
