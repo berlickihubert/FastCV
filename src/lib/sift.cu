@@ -176,21 +176,6 @@ void Sift::findDoGKeypoints(const float* dogs, int width, int height, int channe
     }
 }
 
-std::vector<SiftKeypoint> Sift::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
-    std::vector<SiftKeypoint> keypoints;
-    int img_size = width * height * channels;
-    std::vector<unsigned char> blurred(img_size * num_levels_);
-    std::vector<float> dogs(img_size * (num_levels_ - 1));
-    gaussianPyramidAndDoG(img_in, width, height, channels, num_levels_, sigmas_.data(), blurred.data(), dogs.data(), kernel_size_);
-
-    const int max_keypoints = 10000;
-    findDoGKeypoints(dogs.data(), width, height, channels, num_levels_, keypoints, max_keypoints, 10.0f);
-
-    for (auto& kp : keypoints) {
-        kp.orientation = assignOrientation(blurred.data() + kp.scale * width * height, width, height, channels, kp.x, kp.y, kp.scale);
-    }
-    return keypoints;
-}
 
 float Sift::assignOrientation(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale) {
     const int radius = 8;
@@ -261,4 +246,21 @@ std::array<float, 128> Sift::computeDescriptor(const unsigned char* blurred, int
     norm = std::sqrt(norm);
     if (norm > 1e-6f) for (float& v : desc) v /= norm;
     return desc;
+}
+
+
+std::vector<SiftKeypoint> Sift::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
+    std::vector<SiftKeypoint> keypoints;
+    int img_size = width * height * channels;
+    std::vector<unsigned char> blurred(img_size * num_levels_);
+    std::vector<float> dogs(img_size * (num_levels_ - 1));
+    gaussianPyramidAndDoG(img_in, width, height, channels, num_levels_, sigmas_.data(), blurred.data(), dogs.data(), kernel_size_);
+
+    const int max_keypoints = 10000;
+    findDoGKeypoints(dogs.data(), width, height, channels, num_levels_, keypoints, max_keypoints, 10.0f);
+
+    for (auto& kp : keypoints) {
+        kp.orientation = assignOrientation(blurred.data() + kp.scale * width * height, width, height, channels, kp.x, kp.y, kp.scale);
+    }
+    return keypoints;
 }

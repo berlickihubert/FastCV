@@ -8,11 +8,11 @@
 
 1. Build the Docker image:
    ```powershell
-   docker build -t cuda-demo .
+   docker build -t fastcv .
    ```
 2. Run the container:
    ```powershell
-   docker run --gpus all --rm -v ${PWD}/resources/test_images:/app/resources/test_images cuda-demo
+   docker run --gpus all --rm -v ${PWD}/resources/test_images:/app/resources/test_images fastcv
    ```
 
 
