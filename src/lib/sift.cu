@@ -32,13 +32,13 @@ __global__ void dogKernel(const unsigned char* img1, const unsigned char* img2, 
     }
 }
 
-Sift::Sift(int num_levels, int kernel_size, const std::vector<float>& sigmas)
+SiftOctave::SiftOctave(int num_levels, int kernel_size, const std::vector<float>& sigmas)
     : num_levels_(num_levels), kernel_size_(kernel_size), sigmas_(sigmas) {}
 
-Sift::~Sift() {}
+SiftOctave::~SiftOctave() {}
 
 
-void Sift::createGaussianKernel(float* kernel, int kernel_size, float sigma) {
+void SiftOctave::createGaussianKernel(float* kernel, int kernel_size, float sigma) {
     int k = kernel_size / 2;
     float sum = 0.0f;
     for (int y = 0; y < kernel_size; ++y) {
@@ -53,7 +53,7 @@ void Sift::createGaussianKernel(float* kernel, int kernel_size, float sigma) {
     for (int i = 0; i < kernel_size * kernel_size; ++i) kernel[i] /= sum;
 }
 
-void Sift::gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int width, int height, int channels, const float* kernel, int kernel_size) {
+void SiftOctave::gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int width, int height, int channels, const float* kernel, int kernel_size) {
     size_t img_size = width * height * channels * sizeof(unsigned char);
     size_t kernel_bytes = kernel_size * kernel_size * sizeof(float);
     unsigned char *d_in, *d_out;
@@ -75,7 +75,7 @@ void Sift::gaussianBlur(const unsigned char* img_in, unsigned char* img_out, int
 
 // in: img1, img2
 // out: dog
-void Sift::differenceOfGaussians(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
+void SiftOctave::differenceOfGaussians(const unsigned char* img1, const unsigned char* img2, float* dog, int width, int height, int channels) {
     size_t img_size = width * height * channels * sizeof(unsigned char);
     size_t dog_size = width * height * channels * sizeof(float);
     unsigned char *d_img1, *d_img2;
@@ -97,7 +97,7 @@ void Sift::differenceOfGaussians(const unsigned char* img1, const unsigned char*
 
 //in: img_in
 //out: dogs
-void Sift::gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, int channels, int num_levels, const float* sigmas, unsigned char* blurred, float* dogs, int kernel_size) {
+void SiftOctave::gaussianPyramidAndDoG(const unsigned char* img_in, int width, int height, int channels, int num_levels, const float* sigmas, unsigned char* blurred, float* dogs, int kernel_size) {
     int img_size = width * height * channels;
     std::vector<float> kernel(kernel_size * kernel_size);
     for (int i = 0; i < num_levels; ++i) {
@@ -110,7 +110,7 @@ void Sift::gaussianPyramidAndDoG(const unsigned char* img_in, int width, int hei
 }
 
 // std::vector<float> dogs(img_size * (num_levels_ - 1));
-void Sift::findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, std::vector<SiftKeypoint>& keypoints, int max_keypoints, float threshold) {
+void SiftOctave::findDoGKeypoints(const float* dogs, int width, int height, int channels, int num_levels, std::vector<SiftKeypoint>& keypoints, int max_keypoints, float threshold) {
     int img_size = width * height * channels;
     for (int l = 1; l < num_levels - 2; ++l) {
         const float* dog_prev = dogs + (l - 1) * img_size;
@@ -166,6 +166,7 @@ void Sift::findDoGKeypoints(const float* dogs, int width, int height, int channe
                         kp.x = x;
                         kp.y = y;
                         kp.scale = l;
+                        kp.octave = 0; // Placeholder
                         kp.orientation = 0.0f;
                         kp.descriptor.fill(0.0f);
                         keypoints.push_back(kp);
@@ -177,7 +178,7 @@ void Sift::findDoGKeypoints(const float* dogs, int width, int height, int channe
 }
 
 
-float Sift::assignOrientation(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale) {
+float SiftOctave::assignOrientation(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale) {
     const int radius = 8;
     const int hist_bins = 36;
     std::vector<float> hist(hist_bins, 0.0f);
@@ -204,7 +205,7 @@ float Sift::assignOrientation(const unsigned char* blurred, int width, int heigh
 }
 
 
-std::array<float, 128> Sift::computeDescriptor(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale, float orientation) {
+std::array<float, 128> SiftOctave::computeDescriptor(const unsigned char* blurred, int width, int height, int channels, int x, int y, int scale, float orientation) {
     std::array<float, 128> desc = {0};
     const int d = 4;
     const int n = 8;
@@ -249,7 +250,7 @@ std::array<float, 128> Sift::computeDescriptor(const unsigned char* blurred, int
 }
 
 
-std::vector<SiftKeypoint> Sift::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
+std::vector<SiftKeypoint> SiftOctave::detectKeypoints(const unsigned char* img_in, int width, int height, int channels) {
     std::vector<SiftKeypoint> keypoints;
     int img_size = width * height * channels;
     std::vector<unsigned char> blurred(img_size * num_levels_);

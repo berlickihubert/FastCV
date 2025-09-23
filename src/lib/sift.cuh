@@ -5,16 +5,17 @@
 struct SiftKeypoint {
     int x;
     int y;
+    int octave;
     int scale;
     float orientation;
     std::array<float, 128> descriptor;
 };
 
 
-class Sift {
+class SiftOctave {
 public:
-    Sift(int num_levels, int kernel_size, const std::vector<float>& sigmas);
-    ~Sift();
+    SiftOctave(int num_levels, int kernel_size, const std::vector<float>& sigmas);
+    ~SiftOctave();
     std::vector<SiftKeypoint> detectKeypoints(const unsigned char* img_in, int width, int height, int channels);
 
 private:
