@@ -25,8 +25,7 @@ std::vector<SiftKeypoint> getImgKeypoints(const std::string& img_path) {
             img_in_oct[y * w_oct + x] = img_octave(x, y);
         }
         std::vector<float> octave_sigmas;
-        for (float s : sigmas) octave_sigmas.push_back(s * scale);
-        SiftOctave siftOctave(num_levels, kernel_size, octave_sigmas);
+        SiftOctave siftOctave(num_levels, kernel_size, sigmas);
         auto keypoints = siftOctave.detectKeypoints(img_in_oct.data(), w_oct, h_oct, 1);
         std::cout << "Octave " << octave << ": Detected " << keypoints.size() << " keypoints." << std::endl;
         for (auto& kp : keypoints) {

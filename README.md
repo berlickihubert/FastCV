@@ -1,5 +1,12 @@
-# Structure from motion images/video to 3d model converter
+# Structure from Motion: Images/Video to 3D Model Converter
 
+## SIFT Algorithm for Keypoint Detection from Different Perspectives (CUDA Accelerated)
+
+| Perspective 1 | Perspective 2 |
+|---------------|---------------|
+| ![Keypoints Perspective 1](resources/test_images/cat_photo_2_perspective_1_keypoints.jpg) | ![Keypoints Perspective 2](resources/test_images/cat_photo_2_perspective_2_keypoints.jpg) |
+
+As you can see, the algorithm can detect the cat's key features and can be used to calculate the cat's position based on two images.
 
 ## Prerequisites
 - Docker installed on your system
@@ -18,5 +25,6 @@
 
 ## Tasks:
    - Rewrite int Sift::findDoGKeypoints:
-      - pass dog as multidimensional array not pointer to remove dog_curr, dog_prev, dog_next
-      - improve readibility
+      - Pass dog as multidimensional array, not pointer, to remove dog_curr, dog_prev, dog_next
+      - Improve readability
+   - Implement building 3D models from keypoints
