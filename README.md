@@ -1,6 +1,6 @@
 # Structure from Motion: Images/Video to 3D Model Converter
 
-## SIFT Algorithm for Keypoint Detection from Different Perspectives (CUDA Accelerated)
+## SIFT algorithm for keypoint detection from different perspectives (CUDA Accelerated)
 
 | Perspective 1 | Perspective 2 |
 |---------------|---------------|
